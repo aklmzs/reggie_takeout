@@ -15,6 +15,8 @@ import com.it.reggie.service.DishService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -43,12 +45,13 @@ public class DishController {
 
     //新增菜品
     @PostMapping
+    @CacheEvict(value = "dishCache",allEntries = true)
     public R<String> save(@RequestBody DishDto dishDto){
         log.info(dishDto.toString());
 
         dishService.saveWithFlavor(dishDto);
-        String key= "dish_" + dishDto.getCategoryId()+"_1";
-        redisTemplate.delete(key);
+        //String key= "dish_" + dishDto.getCategoryId()+"_1";
+        //redisTemplate.delete(key);
 
         return R.success("新增菜品成功");
     }
@@ -93,16 +96,18 @@ public class DishController {
     }
     //修改菜品
     @PutMapping
+    @CacheEvict(value = "dishCache",allEntries = true)
     public R<String> update(@RequestBody DishDto dishDto){
         dishService.updateWithFlavor(dishDto);
         // Set keys = redisTemplate.keys("dish_*");
-        String key= "dish_" + dishDto.getCategoryId()+"_1";
-        redisTemplate.delete(key);
+        //String key= "dish_" + dishDto.getCategoryId()+"_1";
+        //redisTemplate.delete(key);
         return R.success("菜品修改成功");
     }
 
     //修改菜品状态
     @PostMapping("/status/{pathVariable}")
+    @CacheEvict(value = "dishCache",allEntries = true)
     public R<String> updateStatus(@PathVariable("pathVariable") int status, @RequestParam("ids") String[] ids) {
         log.info("要修改的菜品id: {}", ids);
         log.info("路径变量: {}", status);
@@ -111,13 +116,13 @@ public class DishController {
             dish.setStatus(status);
             dishService.updateById(dish);
         }
-        LambdaQueryWrapper<Dish> lambdaQueryWrapper = new LambdaQueryWrapper<>();
+        /*LambdaQueryWrapper<Dish> lambdaQueryWrapper = new LambdaQueryWrapper<>();
         lambdaQueryWrapper.in(Dish::getId, ids);
         List<Dish> dishes = dishService.list(lambdaQueryWrapper);
         for (Dish dish : dishes) {
             String key = "dish_" + dish.getCategoryId() + "_1";
             redisTemplate.delete(key);
-        }
+        }*/
         return R.success("菜品状态修改成功");
     }
     @DeleteMapping
@@ -127,14 +132,15 @@ public class DishController {
     }
     //根据条件查菜品数据
     @GetMapping("/list")
+    @Cacheable(value ="dishCache",key = "#dish.categoryId+'_'+#dish.status")
     public R<List<DishDto>> list(Dish dish){
         //从redis中获取缓存数据
-        String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();
+        /*String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();
         List<DishDto> dishDtoList= (List<DishDto>) redisTemplate.opsForValue().get(key);
         if(dishDtoList!=null){
             return R.success(dishDtoList);
         }
-
+*/
         //查询条件
         LambdaQueryWrapper<Dish> queryWrapper=new LambdaQueryWrapper<>();
         queryWrapper.eq(dish.getCategoryId()!=null,Dish::getCategoryId,dish.getCategoryId());
@@ -142,7 +148,7 @@ public class DishController {
         //排序
         queryWrapper.orderByAsc((Dish::getSort)).orderByDesc(Dish::getUpdateTime);
         List<Dish> list = dishService.list(queryWrapper);
-         dishDtoList=list.stream().map((item)->{
+        List<DishDto> dishDtoList=list.stream().map((item)->{
             DishDto dishDto = new DishDto();
             BeanUtils.copyProperties(item,dishDto);
             Long dishid = item.getId();
@@ -153,7 +159,7 @@ public class DishController {
             return dishDto;
 
         }).collect(Collectors.toList());
-        redisTemplate.opsForValue().set(key,dishDtoList,60, TimeUnit.MINUTES);
+        //redisTemplate.opsForValue().set(key,dishDtoList,60, TimeUnit.MINUTES);
         return  R.success(dishDtoList);
     }
 }
